@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>风</title>
+<meta name="description" content="每天一段。读完就走。">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<!--FONTLINK-->
+<style>
+  /*FONTFACE*/
+  /* ---------- 颜色随一天的时辰走 ---------- */
+  :root {
+    --paper: #eef1f3; --paper-deep: #e4e9ec;
+    --ink: #23282c; --ink-soft: #6a737a; --ink-faint: #b3bbc0;
+    --wind: 62, 74, 84;          /* 风的颜色（rgb 三元组，画布用） */
+    --wind-alpha: .19;
+    --serif: /*SERIF*/"Noto Serif SC", "Songti SC", "STSong", "Noto Serif CJK SC", "SimSun", serif;
+    --brush: /*BRUSH*/"Ma Shan Zheng", "STKaiti", "KaiTi", "Noto Serif SC", serif;
+    --latin: /*LATIN*/"Noto Serif", Georgia, "Times New Roman", serif;
+  }
+  :root[data-tod="dawn"] {
+    --paper: #eef0ec; --paper-deep: #e3e7e1;
+    --ink: #2a2e2b; --ink-soft: #6c746e; --ink-faint: #b4bcb5; --wind: 92, 108, 96;
+  }
+  :root[data-tod="dusk"] {
+    --paper: #ecebf0; --paper-deep: #dedce6;
+    --ink: #2b2a32; --ink-soft: #6e6c7a; --ink-faint: #b5b3c0; --wind: 96, 90, 122;
+  }
+  :root[data-tod="night"], :root[data-theme="dark"] {
+    --paper: #14171a; --paper-deep: #0e1013;
+    --ink: #d4d8db; --ink-soft: #8b9298; --ink-faint: #40474c;
+    --wind: 168, 178, 186; --wind-alpha: .16;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #14171a; --paper-deep: #0e1013;
+      --ink: #d4d8db; --ink-soft: #8b9298; --ink-faint: #40474c;
+      --wind: 168, 178, 186; --wind-alpha: .16;
+    }
+  }
+  :root[data-theme="light"] {
+    --paper: #eef1f3; --paper-deep: #e4e9ec;
+    --ink: #23282c; --ink-soft: #6a737a; --ink-faint: #b3bbc0;
+    --wind: 62, 74, 84; --wind-alpha: .19;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; overflow: hidden;
+    background: radial-gradient(120% 90% at 50% 40%, var(--paper) 0%, var(--paper-deep) 100%);
+    color: var(--ink);
+    font-family: var(--serif); font-weight: 300;
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+    transition: background 3s ease, color 3s ease;
+    user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  }
+  a { color: inherit; text-decoration: none; }
+  a:focus-visible { outline: 1px solid var(--ink-soft); outline-offset: 6px; }
+
+  /* 风：铺满，画在文字后面 */
+  #wind {
+    position: fixed; inset: 0; width: 100%; height: 100%; display: block;
+    /* 风绕开卷轴：中间留一片静处，字才读得清 */
+    -webkit-mask-image: radial-gradient(ellipse 30% 46% at 50% 47%, transparent 30%, rgba(0,0,0,.55) 70%, #000 100%);
+            mask-image: radial-gradient(ellipse 30% 46% at 50% 47%, transparent 30%, rgba(0,0,0,.55) 70%, #000 100%);
+  }
+
+  .page {
+    position: relative; z-index: 1;
+    height: 100dvh; display: grid; place-items: center;
+    padding: 12vh 8vw;
+  }
+
+  .date {
+    position: absolute; top: 7vh; right: 7vw; margin: 0;
+    writing-mode: vertical-rl;
+    font-size: .8rem; letter-spacing: .28em; color: var(--ink-soft);
+    transition: color 3s ease;
+  }
+
+  /* 正文：竖排。整块像挂着的卷轴，在风里微微摆。 */
+  .passage {
+    writing-mode: vertical-rl; text-orientation: mixed;
+    height: min(62vh, 680px); max-width: 84vw;
+    font-size: clamp(1.2rem, 1.9vw, 1.55rem); line-height: 2.15; letter-spacing: .1em;
+    margin: 0;
+  }
+  .text { margin: 0; text-wrap: pretty; }
+  .text .ch {
+    display: inline-block; opacity: 0;
+    transition: transform var(--dur, 1.6s) cubic-bezier(.16, .7, .18, 1),
+                opacity   var(--dur, 1.6s) ease,
+                filter    var(--dur, 1.6s) ease;
+    transition-delay: var(--d, 0s);
+    will-change: transform, opacity, filter;
+  }
+  .text .ch.in { opacity: 1; transform: none; filter: blur(0); }
+
+  /* 原文：另起一列，横着躺在竖排的中文旁边。 */
+  .orig {
+    margin: 0; margin-block-start: 1.1em;
+    font-family: var(--latin); font-style: italic; font-weight: 300;
+    font-size: .66em; line-height: 1.9; letter-spacing: .01em;
+    text-orientation: sideways;
+    color: var(--ink-soft);
+    opacity: 0; transition: opacity 2s ease; transition-delay: var(--sd, 2.4s);
+  }
+  .orig.in { opacity: 1; }
+  .orig:empty { display: none; }
+  .orig[lang="ja"] { font-family: var(--serif); font-style: normal; text-orientation: mixed; }
+
+  .source {
+    margin: 0; margin-block-start: 1.4em; padding-inline-start: var(--drop, 42%);
+    font-size: .74em; letter-spacing: .16em; color: var(--ink-soft);
+    opacity: 0; transition: opacity 2s ease; transition-delay: var(--sd, 2.4s);
+  }
+  .source.in { opacity: 1; }
+  .source .note { color: var(--ink-faint); margin-inline-start: 1.2em; }
+
+  .mark {
+    position: absolute; left: 7vw; bottom: 6vh;
+    font-family: var(--brush); font-weight: 400; font-size: 1.7rem; line-height: 1;
+    color: var(--ink-soft);
+  }
+
+  .nav {
+    position: absolute; right: 7vw; bottom: 6.6vh;
+    display: flex; gap: 1.6em;
+    font-size: .78rem; letter-spacing: .22em; color: var(--ink-faint);
+  }
+  .nav a { transition: color .6s ease; cursor: pointer; }
+  .nav a:hover, .nav a[aria-pressed="true"] { color: var(--ink-soft); }
+  .nav a[hidden] { display: none; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .text .ch { transition-duration: .3s; transition-delay: 0s !important; }
+    #wind { display: none; }
+  }
+
+  @media (max-width: 720px), (max-height: 520px) {
+    .page { padding: 16vh 9vw 18vh; }
+    .date { top: 7vh; left: 9vw; right: auto; writing-mode: horizontal-tb; }
+    .passage {
+      writing-mode: horizontal-tb; height: auto; max-width: 34em;
+      font-size: 1.2rem; line-height: 2.05; letter-spacing: .06em;
+    }
+    .orig { margin: 1.5em 0 0; font-size: .86rem; text-orientation: initial; }
+    .source { margin: 1.6em 0 0; padding: 0; text-align: right; }
+    .source .note { margin: 0 0 0 1em; }
+    .mark { left: 9vw; bottom: 6vh; }
+    .nav { right: 9vw; bottom: 6.8vh; }
+  }
+</style>
+</head>
+<body>
+<canvas id="wind" aria-hidden="true"></canvas>
+
+<main class="page">
+  <p class="date"><time id="date"></time></p>
+  <noscript><p class="text" style="opacity:1">风。每天一段。请开启 JavaScript。</p></noscript>
+  <article class="passage" id="passage" aria-live="polite">
+    <p class="text" id="text"></p>
+    <p class="orig" id="orig"></p>
+    <p class="source" id="source"></p>
+  </article>
+  <a class="mark" id="mark" href="./" aria-label="风，回到今日">风</a>
+  <nav class="nav" aria-label="日期与声音">
+    <a id="today" href="./" hidden>今日</a>
+    <a id="yesterday" href="#">昨日</a>
+    <a id="sound" role="button" aria-pressed="false" title="风声">声</a>
+  </nav>
+</main>
+
+<script id="passages" type="application/json">/*PASSAGES*/</script>
+<script>
+(function () {
+  "use strict";
+
+  /* ========== 文本 ========== */
+  // 文本在 data/passages.json，由 build.py 注入到上面的 <script id="passages"> 里。
+  const P = JSON.parse(document.getElementById("passages").textContent);
+
+  const $ = id => document.getElementById(id);
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const rnd = (a, b) => a + Math.random() * (b - a);
+
+  /* ========== 时辰与季节 ========== */
+  const h = new Date().getHours(), mo = new Date().getMonth() + 1;
+  document.documentElement.dataset.tod = h < 5 ? "night" : h < 8 ? "dawn" : h < 17 ? "day" : h < 20 ? "dusk" : "night";
+  // 风有季节：秋风长而急，冬风稀而利，春风带一点向上的浮力，夏天几乎不动。
+  const SEASONS = {
+    spring: { count: .9,  speed: .50, trail: 12, lift: -.06, alpha: 1.00, width: 1.0 },
+    summer: { count: .55, speed: .28, trail:  9, lift:  .00, alpha:  .85, width: 1.0 },
+    autumn: { count: 1.1, speed: .70, trail: 18, lift: -.02, alpha: 1.05, width: 1.0 },
+    winter: { count: .6,  speed: .85, trail: 10, lift:  .03, alpha:  .90, width: .75 }
+  };
+  const seasonName = mo >= 3 && mo <= 5 ? "spring" : mo >= 6 && mo <= 8 ? "summer" : mo >= 9 && mo <= 11 ? "autumn" : "winter";
+  const SEA = SEASONS[seasonName];
+  document.documentElement.dataset.season = seasonName;
+  const isMobile = matchMedia("(max-width: 720px)").matches;
+  const lowEnd = isMobile || (navigator.deviceMemory && navigator.deviceMemory <= 4) || (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4);
+
+  /* ========== 日期 ========== */
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const EPOCH = Date.UTC(2026, 0, 1);
+  const D = "〇一二三四五六七八九";
+  const num = n => n <= 10 ? "一二三四五六七八九十"[n - 1] : n < 20 ? "十" + D[n - 10] : D[Math.floor(n / 10)] + "十" + (n % 10 ? D[n % 10] : "");
+  const cn = d => [...String(d.getFullYear())].map(c => D[+c]).join("") + "年" + num(d.getMonth() + 1) + "月" + num(d.getDate()) + "日";
+  const fmt = d => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  const parse = q => {
+    if (!q || !/^\d{4}-\d{2}-\d{2}$/.test(q)) return today;
+    const [y, m, d] = q.split("-").map(Number);
+    const c = new Date(y, m - 1, d);
+    return (!isNaN(c) && c < today) ? c : today;          // 只能回头，不能预支
+  };
+  const seasonOf = d => { const m = d.getMonth() + 1; return m >= 3 && m <= 5 ? "spring" : m >= 6 && m <= 8 ? "summer" : m >= 9 && m <= 11 ? "autumn" : "winter"; };
+  const pools = {};
+  const poolFor = sn => pools[sn] || (pools[sn] = P.filter(p => !p.season || p.season === sn));
+  const pick = d => {
+    const pool = poolFor(seasonOf(d));
+    const days = Math.floor((Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) - EPOCH) / 864e5);
+    return pool[((days % pool.length) + pool.length) % pool.length];
+  };
+
+  /* ========== 风场 ========== */
+  const canvas = $("wind"), ctx = canvas.getContext("2d");
+  let W = 0, H = 0, dpr = 1, particles = [], gust = 0, t = 0;
+  let windK = 1, windTarget = 1;              // 段落自己的风量，逐帧靠近，换段时不会跳
+  const pointer = { x: -1e4, y: -1e4, vx: 0, vy: 0, down: false };
+
+  // 值噪声（两个八度），够画风了
+  const perm = new Uint8Array(512);
+  for (let i = 0; i < 256; i++) perm[i] = i;
+  for (let i = 255; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; const k = perm[i]; perm[i] = perm[j]; perm[j] = k; }
+  for (let i = 0; i < 256; i++) perm[i + 256] = perm[i];
+  const fade = x => x * x * (3 - 2 * x);
+  function noise(x, y) {
+    const X = Math.floor(x) & 255, Y = Math.floor(y) & 255;
+    const fx = x - Math.floor(x), fy = y - Math.floor(y);
+    const a = perm[perm[X] + Y] / 255, b = perm[perm[X + 1] + Y] / 255,
+          c = perm[perm[X] + Y + 1] / 255, d = perm[perm[X + 1] + Y + 1] / 255;
+    const u = fade(fx), v = fade(fy);
+    const top = a + (b - a) * u, bot = c + (d - c) * u;
+    return top + (bot - top) * v;   // 0..1
+  }
+  const field = (x, y, tt) =>
+    (noise(x * .0022 + tt * .05, y * .0022) * .7 + noise(x * .006 - tt * .03, y * .006 + tt * .02) * .3) * Math.PI * 2;
+
+  function spawn() {
+    return { x: rnd(0, W), y: rnd(0, H), vx: 0, vy: 0, life: rnd(80, 320), age: 0, w: rnd(.5, 1.3), trail: [] };
+  }
+  function resize() {
+    dpr = Math.min(devicePixelRatio || 1, 2);
+    W = innerWidth; H = innerHeight;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const n = Math.round(Math.min(1200, Math.max(160, W * H / (lowEnd ? 3000 : 1700) * SEA.count)));
+    particles = Array.from({ length: n }, spawn);
+  }
+  function windColor() {
+    const cs = getComputedStyle(document.documentElement);
+    return { rgb: cs.getPropertyValue("--wind").trim(), a: (parseFloat(cs.getPropertyValue("--wind-alpha")) || .2) * SEA.alpha };
+  }
+  let color = null, colorTick = 0;
+
+  function step() {
+    t += 1 / 60;
+    if (!color || ++colorTick > 90) { color = windColor(); colorTick = 0; }
+    gust *= .96;
+    windK += (windTarget - windK) * .02;
+    pointer.vx *= .9; pointer.vy *= .9;
+
+    ctx.clearRect(0, 0, W, H);
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "rgba(" + color.rgb + "," + (color.a * (.45 + .55 * Math.min(windK, 1))) + ")";
+
+    const base = -(SEA.speed * windK + gust * 2.2);     // 风从右往左
+    const trailLen = Math.max(4, Math.round(SEA.trail * Math.min(windK, 1.4))) * 2;
+    for (const p of particles) {
+      const a = field(p.x, p.y, t);
+      const ax = Math.cos(a) * .35 * windK + base, ay = Math.sin(a) * .35 * windK + SEA.lift - gust * .08;
+      // 指针：靠近的被推开，指针的速度带起一阵
+      const dx = p.x - pointer.x, dy = p.y - pointer.y, d2 = dx * dx + dy * dy, R = pointer.down ? 260 : 150;
+      if (d2 < R * R) {
+        const d = Math.sqrt(d2) + .01, f = 1 - d / R, k = pointer.down ? 1.4 : .5;
+        p.vx += (dx / d) * f * k + pointer.vx * f * .18;
+        p.vy += (dy / d) * f * k + pointer.vy * f * .18;
+      }
+      p.vx = (p.vx + ax) * .92; p.vy = (p.vy + ay) * .92;
+      p.x += p.vx; p.y += p.vy; p.age++;
+      p.trail.push(p.x, p.y);
+      while (p.trail.length > trailLen) p.trail.splice(0, 2);
+      if (p.age > p.life || p.x < -20 || p.x > W + 20 || p.y < -20 || p.y > H + 20) {
+        const q = spawn(); if (Math.random() < .7) { q.x = W + 10; q.y = rnd(0, H); }
+        Object.assign(p, q); continue;
+      }
+      const k = Math.min(1, p.age / 30) * Math.min(1, (p.life - p.age) / 30);   // 生灭都是渐的
+      if (p.trail.length < 4) continue;
+      ctx.globalAlpha = k;
+      ctx.lineWidth = p.w * SEA.width;
+      ctx.beginPath();
+      ctx.moveTo(p.trail[0], p.trail[1]);
+      for (let i = 2; i < p.trail.length; i += 2) ctx.lineTo(p.trail[i], p.trail[i + 1]);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    requestAnimationFrame(step);
+  }
+
+  /* ========== 文字：吹进来，吹出去 ========== */
+  const textEl = $("text"), srcEl = $("source"), origEl = $("orig");
+  let glyphs = [];
+
+  function layout(p) {
+    textEl.replaceChildren(); srcEl.replaceChildren();
+    glyphs = [];
+    for (const ch of p.t) {
+      if (ch === "\n") { textEl.appendChild(document.createElement("br")); continue; }
+      const s = document.createElement("span");
+      s.className = "ch"; s.textContent = ch;
+      textEl.appendChild(s); glyphs.push(s);
+    }
+    windTarget = (p.w == null) ? 1 : p.w;
+    const drop = glyphs.length < 12 ? "8%" : glyphs.length < 40 ? "26%" : "42%";
+    srcEl.style.setProperty("--drop", drop);
+    origEl.textContent = p.o || "";
+    if (p.l) origEl.setAttribute("lang", p.l); else origEl.removeAttribute("lang");
+    srcEl.textContent = p.s;
+    if (p.n) { const n = document.createElement("span"); n.className = "note"; n.textContent = p.n; srcEl.appendChild(n); }
+  }
+
+  function blowIn() {
+    const n = glyphs.length, step = Math.min(.03, 2.4 / Math.max(1, n));
+    glyphs.forEach((g, i) => {
+      // 每个字从右上方、沿风来的方向落位；远近不一，像被同一阵风带到
+      const dist = rnd(140, 420), lift = rnd(-70, 30);
+      g.style.setProperty("--d", (i * step + rnd(0, .25)).toFixed(3) + "s");
+      g.style.setProperty("--dur", rnd(1.4, 2.3).toFixed(2) + "s");
+      g.style.transform = "translate(" + dist + "px," + lift + "px) rotate(" + rnd(-14, 14) + "deg)";
+      g.style.filter = "blur(" + (isMobile ? 3 : 6) + "px)";
+      g.classList.remove("in");
+    });
+    const sd = (n * step + 1.2).toFixed(2) + "s";
+    srcEl.style.setProperty("--sd", sd); origEl.style.setProperty("--sd", sd);
+    srcEl.classList.remove("in"); origEl.classList.remove("in");
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      glyphs.forEach(g => { g.style.transform = ""; g.style.filter = ""; g.classList.add("in"); });
+      srcEl.classList.add("in"); origEl.classList.add("in");
+    }));
+    gust = Math.max(gust, .8);
+  }
+
+  function blowOut() {
+    return new Promise(res => {
+      const n = glyphs.length, step = Math.min(.012, 1 / Math.max(1, n));
+      glyphs.forEach((g, i) => {
+        g.style.setProperty("--d", (i * step * (Math.random() < .5 ? 1 : .6)).toFixed(3) + "s");
+        g.style.setProperty("--dur", rnd(.8, 1.3).toFixed(2) + "s");
+        g.classList.remove("in");
+        g.style.transform = "translate(" + (-rnd(260, 560)) + "px," + rnd(-40, 90) + "px) rotate(" + rnd(-25, 25) + "deg)";
+        g.style.filter = "blur(" + (isMobile ? 4 : 8) + "px)";
+      });
+      srcEl.style.setProperty("--sd", "0s"); srcEl.classList.remove("in");
+      origEl.style.setProperty("--sd", "0s"); origEl.classList.remove("in");
+      gust = Math.max(gust, 1.6);
+      setTimeout(res, 1500);
+    });
+  }
+
+  /* ========== 换日 ========== */
+  let day = parse(new URLSearchParams(location.search).get("d"));
+  const dateEl = $("date"), yEl = $("yesterday"), tEl = $("today");
+  let busy = false;
+
+  function setDay(d, push) {
+    day = d;
+    dateEl.textContent = cn(d); dateEl.dateTime = fmt(d);
+    const y = new Date(d); y.setDate(y.getDate() - 1);
+    yEl.href = "?d=" + fmt(y);
+    tEl.hidden = !(d < today);
+    if (push) history.pushState(null, "", d < today ? "?d=" + fmt(d) : location.pathname);
+  }
+  async function go(d, push) {
+    if (busy) return; busy = true;
+    if (!reduced) await blowOut();
+    setDay(d, push);
+    layout(pick(d));
+    if (reduced) { glyphs.forEach(g => g.classList.add("in")); srcEl.classList.add("in"); origEl.classList.add("in"); }
+    else blowIn();
+    busy = false;
+  }
+  yEl.addEventListener("click", e => { e.preventDefault(); const y = new Date(day); y.setDate(y.getDate() - 1); go(y, true); });
+  tEl.addEventListener("click", e => { e.preventDefault(); go(today, true); });
+  $("mark").addEventListener("click", e => { e.preventDefault(); if (day < today) go(today, true); else gust = Math.max(gust, 1.2); });
+  addEventListener("popstate", () => go(parse(new URLSearchParams(location.search).get("d")), false));
+
+  /* ========== 指针 ========== */
+  let lx = 0, ly = 0, lt = 0;
+  function move(x, y) {
+    const n = performance.now(), dt = Math.max(8, n - lt);
+    pointer.vx = (x - lx) / dt * 16; pointer.vy = (y - ly) / dt * 16;
+    pointer.x = x; pointer.y = y; lx = x; ly = y; lt = n;
+  }
+  addEventListener("pointermove", e => move(e.clientX, e.clientY), { passive: true });
+  addEventListener("pointerleave", () => { pointer.x = pointer.y = -1e4; });
+  addEventListener("pointerdown", e => {
+    if (e.target.closest("a")) return;
+    pointer.down = true; move(e.clientX, e.clientY);
+    gust = Math.max(gust, .6);
+    // 按住的时候，字被吹得散一点；松开就回去
+    glyphs.forEach(g => {
+      if (!g.classList.contains("in")) return;
+      g.style.transition = "transform 1.2s cubic-bezier(.2,.7,.2,1)";
+      g.style.transform = "translate(" + rnd(-16, 4) + "px," + rnd(-8, 8) + "px) rotate(" + rnd(-3, 3) + "deg)";
+    });
+  });
+  const release = () => {
+    pointer.down = false;
+    glyphs.forEach(g => { if (g.classList.contains("in")) { g.style.transform = ""; g.style.transition = ""; } });
+  };
+  addEventListener("pointerup", release); addEventListener("pointercancel", release);
+
+  /* ========== 风声（可选，默认关） ========== */
+  let audio = null;
+  function toggleSound(btn) {
+    if (!audio) {
+      const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+      const ac = new AC();
+      const len = ac.sampleRate * 4, buf = ac.createBuffer(1, len, ac.sampleRate), data = buf.getChannelData(0);
+      let b0 = 0, b1 = 0, b2 = 0;
+      for (let i = 0; i < len; i++) {          // 粉噪声
+        const w = Math.random() * 2 - 1;
+        b0 = .997 * b0 + .029 * w; b1 = .985 * b1 + .032 * w; b2 = .95 * b2 + .048 * w;
+        data[i] = (b0 + b1 + b2 + w * .05) * .25;
+      }
+      const src = ac.createBufferSource(); src.buffer = buf; src.loop = true;
+      const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 420; bp.Q.value = .9;
+      const lfo = ac.createOscillator(); lfo.type = "sine"; lfo.frequency.value = .11;
+      const lfoG = ac.createGain(); lfoG.gain.value = 260;
+      lfo.connect(lfoG).connect(bp.frequency);
+      const gain = ac.createGain(); gain.gain.value = 0;
+      src.connect(bp).connect(gain).connect(ac.destination);
+      src.start(); lfo.start();
+      audio = { ac, gain, on: false };
+      // 风大的时候声音也大
+      (function follow() { if (audio.on) audio.gain.gain.setTargetAtTime(.05 + gust * .06, ac.currentTime, .2); requestAnimationFrame(follow); })();
+    }
+    audio.on = !audio.on;
+    if (audio.ac.state === "suspended") audio.ac.resume();
+    audio.gain.gain.setTargetAtTime(audio.on ? .05 : 0, audio.ac.currentTime, .8);
+    btn.setAttribute("aria-pressed", String(audio.on));
+  }
+  $("sound").addEventListener("click", e => { e.preventDefault(); toggleSound(e.currentTarget); });
+
+  /* ========== 起 ========== */
+  addEventListener("resize", resize);
+  resize();
+  if (!reduced) requestAnimationFrame(step);
+  setDay(day, false);
+  layout(pick(day));
+  if (reduced) { glyphs.forEach(g => g.classList.add("in")); srcEl.classList.add("in"); origEl.classList.add("in"); }
+  else setTimeout(blowIn, 250);
+})();
+</script>
+</body>
+</html>

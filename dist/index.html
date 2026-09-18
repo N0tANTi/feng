@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>风</title>
+<meta name="description" content="每天一段。读完就走。">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+
+<style>
+  @font-face { font-family: "Feng"; src: url(fonts/feng.woff2) format("woff2"); font-weight: 300; font-display: swap; }
+  /* ---------- 颜色随一天的时辰走 ---------- */
+  :root {
+    --paper: #eef1f3; --paper-deep: #e4e9ec;
+    --ink: #23282c; --ink-soft: #6a737a; --ink-faint: #b3bbc0;
+    --wind: 62, 74, 84;          /* 风的颜色（rgb 三元组，画布用） */
+    --wind-alpha: .19;
+    --serif: "Feng", "Noto Serif SC", "Songti SC", "STSong", "Noto Serif CJK SC", "SimSun", serif;
+    --brush: "Feng", "Ma Shan Zheng", "STKaiti", "KaiTi", "Noto Serif SC", serif;
+    --latin: "Feng", "Noto Serif", Georgia, "Times New Roman", serif;
+  }
+  :root[data-tod="dawn"] {
+    --paper: #eef0ec; --paper-deep: #e3e7e1;
+    --ink: #2a2e2b; --ink-soft: #6c746e; --ink-faint: #b4bcb5; --wind: 92, 108, 96;
+  }
+  :root[data-tod="dusk"] {
+    --paper: #ecebf0; --paper-deep: #dedce6;
+    --ink: #2b2a32; --ink-soft: #6e6c7a; --ink-faint: #b5b3c0; --wind: 96, 90, 122;
+  }
+  :root[data-tod="night"], :root[data-theme="dark"] {
+    --paper: #14171a; --paper-deep: #0e1013;
+    --ink: #d4d8db; --ink-soft: #8b9298; --ink-faint: #40474c;
+    --wind: 168, 178, 186; --wind-alpha: .16;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #14171a; --paper-deep: #0e1013;
+      --ink: #d4d8db; --ink-soft: #8b9298; --ink-faint: #40474c;
+      --wind: 168, 178, 186; --wind-alpha: .16;
+    }
+  }
+  :root[data-theme="light"] {
+    --paper: #eef1f3; --paper-deep: #e4e9ec;
+    --ink: #23282c; --ink-soft: #6a737a; --ink-faint: #b3bbc0;
+    --wind: 62, 74, 84; --wind-alpha: .19;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; overflow: hidden;
+    background: radial-gradient(120% 90% at 50% 40%, var(--paper) 0%, var(--paper-deep) 100%);
+    color: var(--ink);
+    font-family: var(--serif); font-weight: 300;
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+    transition: background 3s ease, color 3s ease;
+    user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  }
+  a { color: inherit; text-decoration: none; }
+  a:focus-visible { outline: 1px solid var(--ink-soft); outline-offset: 6px; }
+
+  /* 风：铺满，画在文字后面 */
+  #wind {
+    position: fixed; inset: 0; width: 100%; height: 100%; display: block;
+    /* 风绕开卷轴：中间留一片静处，字才读得清 */
+    -webkit-mask-image: radial-gradient(ellipse 30% 46% at 50% 47%, transparent 30%, rgba(0,0,0,.55) 70%, #000 100%);
+            mask-image: radial-gradient(ellipse 30% 46% at 50% 47%, transparent 30%, rgba(0,0,0,.55) 70%, #000 100%);
+  }
+
+  .page {
+    position: relative; z-index: 1;
+    height: 100dvh; display: grid; place-items: center;
+    padding: 12vh 8vw;
+  }
+
+  .date {
+    position: absolute; top: 7vh; right: 7vw; margin: 0;
+    writing-mode: vertical-rl;
+    font-size: .8rem; letter-spacing: .28em; color: var(--ink-soft);
+    transition: color 3s ease;
+  }
+
+  /* 正文：竖排。整块像挂着的卷轴，在风里微微摆。 */
+  .passage {
+    writing-mode: vertical-rl; text-orientation: mixed;
+    height: min(62vh, 680px); max-width: 84vw;
+    font-size: clamp(1.2rem, 1.9vw, 1.55rem); line-height: 2.15; letter-spacing: .1em;
+    margin: 0;
+  }
+  .text { margin: 0; text-wrap: pretty; }
+  .text .ch {
+    display: inline-block; opacity: 0;
+    transition: transform var(--dur, 1.6s) cubic-bezier(.16, .7, .18, 1),
+                opacity   var(--dur, 1.6s) ease,
+                filter    var(--dur, 1.6s) ease;
+    transition-delay: var(--d, 0s);
+    will-change: transform, opacity, filter;
+  }
+  .text .ch.in { opacity: 1; transform: none; filter: blur(0); }
+
+  /* 原文：另起一列，横着躺在竖排的中文旁边。 */
+  .orig {
+    margin: 0; margin-block-start: 1.1em;
+    font-family: var(--latin); font-style: italic; font-weight: 300;
+    font-size: .66em; line-height: 1.9; letter-spacing: .01em;
+    text-orientation: sideways;
+    color: var(--ink-soft);
+    opacity: 0; transition: opacity 2s ease; transition-delay: var(--sd, 2.4s);
+  }
+  .orig.in { opacity: 1; }
+  .orig:empty { display: none; }
+  .orig[lang="ja"] { font-family: var(--serif); font-style: normal; text-orientation: mixed; }
+
+  .source {
+    margin: 0; margin-block-start: 1.4em; padding-inline-start: var(--drop, 42%);
+    font-size: .74em; letter-spacing: .16em; color: var(--ink-soft);
+    opacity: 0; transition: opacity 2s ease; transition-delay: var(--sd, 2.4s);
+  }
+  .source.in { opacity: 1; }
+  .source .note { color: var(--ink-faint); margin-inline-start: 1.2em; }
+
+  .mark {
+    position: absolute; left: 7vw; bottom: 6vh;
+    font-family: var(--brush); font-weight: 400; font-size: 1.7rem; line-height: 1;
+    color: var(--ink-soft);
+  }
+
+  .nav {
+    position: absolute; right: 7vw; bottom: 6.6vh;
+    display: flex; gap: 1.6em;
+    font-size: .78rem; letter-spacing: .22em; color: var(--ink-faint);
+  }
+  .nav a { transition: color .6s ease; cursor: pointer; }
+  .nav a:hover, .nav a[aria-pressed="true"] { color: var(--ink-soft); }
+  .nav a[hidden] { display: none; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .text .ch { transition-duration: .3s; transition-delay: 0s !important; }
+    #wind { display: none; }
+  }
+
+  @media (max-width: 720px), (max-height: 520px) {
+    .page { padding: 16vh 9vw 18vh; }
+    .date { top: 7vh; left: 9vw; right: auto; writing-mode: horizontal-tb; }
+    .passage {
+      writing-mode: horizontal-tb; height: auto; max-width: 34em;
+      font-size: 1.2rem; line-height: 2.05; letter-spacing: .06em;
+    }
+    .orig { margin: 1.5em 0 0; font-size: .86rem; text-orientation: initial; }
+    .source { margin: 1.6em 0 0; padding: 0; text-align: right; }
+    .source .note { margin: 0 0 0 1em; }
+    .mark { left: 9vw; bottom: 6vh; }
+    .nav { right: 9vw; bottom: 6.8vh; }
+  }
+</style>
+</head>
+<body>
+<canvas id="wind" aria-hidden="true"></canvas>
+
+<main class="page">
+  <p class="date"><time id="date"></time></p>
+  <noscript><p class="text" style="opacity:1">风。每天一段。请开启 JavaScript。</p></noscript>
+  <article class="passage" id="passage" aria-live="polite">
+    <p class="text" id="text"></p>
+    <p class="orig" id="orig"></p>
+    <p class="source" id="source"></p>
+  </article>
+  <a class="mark" id="mark" href="./" aria-label="风，回到今日">风</a>
+  <nav class="nav" aria-label="日期与声音">
+    <a id="today" href="./" hidden>今日</a>
+    <a id="yesterday" href="#">昨日</a>
+    <a id="sound" role="button" aria-pressed="false" title="风声">声</a>
+  </nav>
+</main>
+
+<script id="passages" type="application/json">[{"t":"时有风吹幡动，一僧曰风动，一僧曰幡动，议论不已。惠能进曰：「不是风动，不是幡动，仁者心动。」","s":"《六祖坛经》行由品"},{"t":"夫大块噫气，其名为风。是唯无作，作则万窍怒呺。而独不闻之翏翏乎？","s":"《庄子》齐物论","w":1.5,"season":"autumn"},{"t":"「莫春者，春服既成，冠者五六人，童子六七人，浴乎沂，风乎舞雩，咏而归。」夫子喟然叹曰：「吾与点也！」","s":"《论语》先进","w":1.2,"season":"spring"},{"t":"踏进同一条河的人，遇到的总是不同的水。\n自然爱隐藏。\n时间是一个掷骰子的孩子；王权属于孩子。","s":"赫拉克利特 残篇","n":"试译","l":"grc","o":"ποταμοῖσι τοῖσιν αὐτοῖσιν ἐμβαίνουσιν ἕτερα καὶ ἕτερα ὕδατα ἐπιρρεῖ. / φύσις κρύπτεσθαι φιλεῖ. / αἰὼν παῖς ἐστι παίζων, πεσσεύων· παιδὸς ἡ βασιληίη.","w":0.9},{"t":"你走遍每一条路，也找不到灵魂的边界；它的逻各斯如此之深。","s":"赫拉克利特 残篇","n":"试译","l":"grc","o":"ψυχῆς πείρατα ἰὼν οὐκ ἂν ἐξεύροιο, πᾶσαν ἐπιπορευόμενος ὁδόν· οὕτω βαθὺν λόγον ἔχει."},{"t":"莫听穿林打叶声，何妨吟啸且徐行。竹杖芒鞋轻胜马，谁怕？一蓑烟雨任平生。\n料峭春风吹酒醒，微冷，山头斜照却相迎。回首向来萧瑟处，归去，也无风雨也无晴。","s":"苏轼《定风波》","w":1.3,"season":"spring"},{"t":"春有百花秋有月，夏有凉风冬有雪。\n若无闲事挂心头，便是人间好时节。","s":"无门慧开《无门关》"},{"t":"天地之间，其犹橐籥乎？虚而不屈，动而愈出。多言数穷，不如守中。","s":"《老子》第五章","w":1.2},{"t":"上行的路和下行的路，是同一条。\n德尔斐的神既不说出，也不隐藏，只是示意。","s":"赫拉克利特 残篇","n":"试译","l":"grc","o":"ὁδὸς ἄνω κάτω μία καὶ ὡυτή. / ὁ ἄναξ οὗ τὸ μαντεῖόν ἐστι τὸ ἐν Δελφοῖς, οὔτε λέγει οὔτε κρύπτει ἀλλὰ σημαίνει."},{"t":"因为思与在，是同一回事。","s":"巴门尼德 残篇","n":"试译","l":"grc","o":"τὸ γὰρ αὐτὸ νοεῖν ἐστίν τε καὶ εἶναι."},{"t":"井蛙不可以语于海者，拘于虚也；夏虫不可以语于冰者，笃于时也；曲士不可以语于道者，束于教也。","s":"《庄子》秋水","season":"summer"},{"t":"庄子曰：「鯈鱼出游从容，是鱼之乐也。」惠子曰：「子非鱼，安知鱼之乐？」庄子曰：「子非我，安知我不知鱼之乐？」","s":"《庄子》秋水","season":"summer"},{"t":"上善若水。水善利万物而不争，处众人之所恶，故几于道。","s":"《老子》第八章"},{"t":"甜是约定，苦是约定，热、冷、颜色都是约定；真实的只有原子和虚空。","s":"德谟克利特 残篇","n":"试译","l":"grc","o":"νόμῳ γλυκὺ καὶ νόμῳ πικρόν, νόμῳ θερμόν, νόμῳ ψυχρόν, νόμῳ χροιή· ἐτεῇ δὲ ἄτομα καὶ κενόν."},{"t":"惊异正是哲学家的感受；哲学没有别的开端，只有这一个。","s":"柏拉图《泰阿泰德》","n":"试译","l":"grc","o":"μάλα γὰρ φιλοσόφου τοῦτο τὸ πάθος, τὸ θαυμάζειν· οὐ γὰρ ἄλλη ἀρχὴ φιλοσοφίας ἢ αὕτη."},{"t":"三十辐共一毂，当其无，有车之用。埏埴以为器，当其无，有器之用。凿户牖以为室，当其无，有室之用。故有之以为利，无之以为用。","s":"《老子》第十一章"},{"t":"子在川上曰：「逝者如斯夫！不舍昼夜。」","s":"《论语》子罕","w":0.9},{"t":"饭疏食饮水，曲肱而枕之，乐亦在其中矣。不义而富且贵，于我如浮云。","s":"《论语》述而","season":"summer"},{"t":"如果我说，每天谈论德性是人最大的好事，而未经省察的生活不值得人过，你们就更不会信我了。可事情正是如此，雅典人。","s":"柏拉图《申辩篇》","n":"试译","l":"grc","o":"ὁ δὲ ἀνεξέταστος βίος οὐ βιωτὸς ἀνθρώπῳ."},{"t":"人应当把这些话像咒语一样念给自己听——因为这是一场美的冒险。","s":"柏拉图《斐多》","n":"试译","l":"grc","o":"καλὸς γὰρ ὁ κίνδυνος, καὶ χρὴ τὰ τοιαῦτα ὥσπερ ἐπᾴδειν ἑαυτῷ."},{"t":"万物皆备于我矣。反身而诚，乐莫大焉。","s":"《孟子》尽心上","w":0.5},{"t":"先生游南镇，一友指岩中花树问曰：「天下无心外之物，如此花树在深山中自开自落，于我心亦何相关？」先生曰：「你未看此花时，此花与汝心同归于寂；你来看此花时，则此花颜色一时明白起来。便知此花不在你的心外。」","s":"王阳明《传习录》"},{"t":"王子猷居山阴，夜大雪，眠觉，开室命酌酒，四望皎然。因起彷徨，咏左思《招隐诗》，忽忆戴安道。时戴在剡，即便夜乘小船就之。经宿方至，造门不前而返。人问其故，王曰：「吾本乘兴而行，兴尽而返，何必见戴？」","s":"《世说新语》任诞","w":0.5,"season":"winter"},{"t":"求知是所有人的本性。对感觉的喜爱就是明证：即使撇开用处不谈，人们也为感觉本身而喜爱它们；而在诸感觉中，尤其喜爱视觉。","s":"亚里士多德《形而上学》开篇","n":"试译","l":"grc","o":"Πάντες ἄνθρωποι τοῦ εἰδέναι ὀρέγονται φύσει."},{"t":"一只燕子不成春天，一天也不能；同样，一天或短短一段时间，也不能使人幸福。","s":"亚里士多德《尼各马可伦理学》","n":"试译","l":"grc","o":"μία γὰρ χελιδὼν ἔαρ οὐ ποιεῖ, οὐδὲ μία ἡμέρα· οὕτω δὲ οὐδὲ μακάριον καὶ εὐδαίμονα μία ἡμέρα οὐδ' ὀλίγος χρόνος.","season":"spring"},{"t":"结庐在人境，而无车马喧。\n问君何能尔？心远地自偏。\n采菊东篱下，悠然见南山。\n山气日夕佳，飞鸟相与还。\n此中有真意，欲辨已忘言。","s":"陶渊明《饮酒》其五","w":0.5,"season":"autumn"},{"t":"云无心以出岫，鸟倦飞而知还。景翳翳以将入，抚孤松而盘桓。","s":"陶渊明《归去来兮辞》","w":0.7,"season":"autumn"},{"t":"纵浪大化中，不喜亦不惧。\n应尽便须尽，无复独多虑。","s":"陶渊明《形影神》神释"},{"t":"死亡与我们无关。因为我们存在时，死亡尚未到来；死亡到来时，我们已不存在。它既不关乎活着的人，也不关乎已死的人：对前者，它还不在；对后者，他们已不在。","s":"伊壁鸠鲁《致美诺凯乌斯》","n":"试译","l":"grc","o":"ὁ θάνατος οὐδὲν πρὸς ἡμᾶς· ὅταν μὲν ἡμεῖς ὦμεν, ὁ θάνατος οὐ πάρεστιν, ὅταν δὲ ὁ θάνατος παρῇ, τόθ' ἡμεῖς οὐκ ἐσμέν."},{"t":"隐蔽地活。","s":"伊壁鸠鲁 残篇","n":"试译","l":"grc","o":"λάθε βιώσας.","w":0.3,"season":"winter"},{"t":"天行有常，不为尧存，不为桀亡。应之以治则吉，应之以乱则凶。","s":"《荀子》天论"},{"t":"惟江上之清风，与山间之明月，耳得之而为声，目遇之而成色，取之无禁，用之不竭，是造物者之无尽藏也，而吾与子之所共适。","s":"苏轼《前赤壁赋》","w":1.1,"season":"autumn"},{"t":"逝者如斯，而未尝往也；盈虚者如彼，而卒莫消长也。","s":"苏轼《前赤壁赋》","w":0.8,"season":"autumn"},{"t":"有些事在我们能力之内，有些不在。在我们能力之内的是看法、冲动、欲望和厌恶，总之凡是我们自己的活动；不在我们能力之内的是身体、财产、名声和职位，总之凡不是我们自己的活动。","s":"爱比克泰德《手册》一","n":"试译","l":"grc","o":"Τῶν ὄντων τὰ μέν ἐστιν ἐφ' ἡμῖν, τὰ δὲ οὐκ ἐφ' ἡμῖν."},{"t":"扰乱人的不是事情本身，而是人对事情的看法。","s":"爱比克泰德《手册》五","n":"试译","l":"grc","o":"Ταράσσει τοὺς ἀνθρώπους οὐ τὰ πράγματα, ἀλλὰ τὰ περὶ τῶν πραγμάτων δόγματα."},{"t":"长恨此身非我有，何时忘却营营。夜阑风静縠纹平。小舟从此逝，江海寄余生。","s":"苏轼《临江仙》","w":0.9,"season":"autumn"},{"t":"吾生也有涯，而知也无涯。以有涯随无涯，殆已。","s":"《庄子》养生主"},{"t":"泉涸，鱼相与处于陆，相呴以湿，相濡以沫，不如相忘于江湖。","s":"《庄子》大宗师","season":"autumn"},{"t":"人们为自己寻找隐退之处：乡间、海滨、山上，你也曾极渴望这些。可这全是庸人之见，因为你随时可以退入自己心里。没有哪个地方比人自己的灵魂更宁静、更少纷扰。","s":"马可·奥勒留《沉思录》四之三","n":"试译","l":"grc","o":"οὐδαμοῦ γὰρ οὔτε ἡσυχιώτερον οὔτε ἀπραγμονέστερον ἄνθρωπος ἀναχωρεῖ ἢ εἰς τὴν ἑαυτοῦ ψυχήν.","w":0.4},{"t":"清晨不情愿起床时，让这句话在手边：我起来，是去做一个人的工作。","s":"马可·奥勒留《沉思录》五之一","n":"试译","l":"grc","o":"Ὄρθρου ὅταν δυσόκνως ἐξεγείρῃ, πρόχειρον ἔστω ὅτι ἐπὶ ἀνθρώπου ἔργον ἐγείρομαι.","season":"winter"},{"t":"致虚极，守静笃。万物并作，吾以观复。夫物芸芸，各复归其根。","s":"《老子》第十六章","w":0.15,"season":"winter"},{"t":"人生天地之间，若白驹之过隙，忽然而已。","s":"《庄子》知北游"},{"t":"荃者所以在鱼，得鱼而忘荃；蹄者所以在兔，得兔而忘蹄；言者所以在意，得意而忘言。吾安得夫忘言之人而与之言哉！","s":"《庄子》外物"},{"t":"时间是一条由发生之事汇成的河，一股湍急的流：一物刚被看见，就被冲走，另一物被带来，随即也将被带走。","s":"马可·奥勒留《沉思录》四之四十三","n":"试译","l":"grc","o":"Ποταμός τις ἐκ τῶν γινομένων καὶ ῥεῦμα βίαιον ὁ αἰών· ἅμα τε γὰρ ὤφθη ἕκαστον, καὶ παρενήνεκται καὶ ἄλλο παραφέρεται, τὸ δὲ ἐνεχθήσεται.","w":1.1},{"t":"眼睛若不先变得像太阳，便永远看不见太阳。","s":"普罗提诺《九章集》","n":"试译","l":"grc","o":"οὐ γὰρ ἂν πώποτε εἶδεν ὀφθαλμὸς ἥλιον ἡλιοειδὴς μὴ γεγενημένος."},{"t":"能闲世人之所忙者，方能忙世人之所闲。","s":"张潮《幽梦影》"},{"t":"行到水穷处，坐看云起时。","s":"王维《终南别业》"},{"t":"夫天地者，万物之逆旅也；光阴者，百代之过客也。而浮生若梦，为欢几何？","s":"李白《春夜宴从弟桃花园序》","season":"spring"},{"t":"一切都是别人的，卢基里乌斯，唯有时间是我们自己的。","s":"塞涅卡《道德书简》一","n":"试译","l":"la","o":"Omnia, Lucili, aliena sunt, tempus tantum nostrum est."},{"t":"我们拥有的时间并不少，只是浪费得太多。","s":"塞涅卡《论生命之短暂》","n":"试译","l":"la","o":"Non exiguum temporis habemus, sed multum perdidimus."},{"t":"仰观宇宙之大，俯察品类之盛，所以游目骋怀，足以极视听之娱，信可乐也。","s":"王羲之《兰亭集序》","season":"spring"},{"t":"江畔何人初见月？江月何年初照人？\n人生代代无穷已，江月年年望相似。","s":"张若虚《春江花月夜》","season":"spring"},{"t":"桓公少与殷侯齐名，常有竞心。桓问殷：「卿何如我？」殷云：「我与我周旋久，宁作我。」","s":"《世说新语》品藻"},{"t":"愿意的，命运领着走；不愿意的，命运拖着走。","s":"塞涅卡《道德书简》一〇七","n":"试译","l":"la","o":"Ducunt volentem fata, nolentem trahunt."},{"t":"当狂风搅动大海，站在岸上看别人在风浪中挣扎，是一件甜美的事——不是因为别人受苦令人愉快，而是看清自己免于何种苦难，令人愉快。","s":"卢克莱修《物性论》卷二","n":"试译","l":"la","o":"Suave, mari magno turbantibus aequora ventis, e terra magnum alterius spectare laborem; non quia vexari quemquamst iucunda voluptas, sed quibus ipse malis careas quia cernere suave est.","w":1.4,"season":"winter"},{"t":"桓公北征经金城，见前为琅邪时种柳，皆已十围，慨然曰：「木犹如此，人何以堪！」攀枝执条，泫然流泪。","s":"《世说新语》言语","season":"spring"},{"t":"道可道，非常道；名可名，非常名。无名天地之始，有名万物之母。","s":"《老子》第一章"},{"t":"天下皆知美之为美，斯恶已；皆知善之为善，斯不善已。故有无相生，难易相成，长短相较，高下相倾，音声相和，前后相随。","s":"《老子》第二章"},{"t":"活着，就是思考。","s":"西塞罗《图斯库兰论辩》","n":"试译","l":"la","o":"Vivere est cogitare."},{"t":"那么时间是什么？没人问我，我知道；要向问的人解释，我便不知道了。","s":"奥古斯丁《忏悔录》卷十一","n":"试译","l":"la","o":"Quid est ergo tempus? Si nemo ex me quaerat, scio; si quaerenti explicare velim, nescio."},{"t":"人法地，地法天，天法道，道法自然。","s":"《老子》第二十五章"},{"t":"知人者智，自知者明。胜人者有力，自胜者强。知足者富，强行者有志。","s":"《老子》第三十三章"},{"t":"反者道之动，弱者道之用。天下万物生于有，有生于无。","s":"《老子》第四十章"},{"t":"风往南刮，又转向北，绕了又绕，仍回到它的圈子里。江河都往海里流，海却不满。","s":"《传道书》一章","n":"试译","l":"la","o":"Gyrat per meridiem, et flectitur ad aquilonem; lustrans universa in circuitu pergit spiritus, et in circulos suos revertitur. Omnia flumina intrant in mare, et mare non redundat.","w":1.3,"season":"autumn"},{"t":"风随着自己的意思吹，你听见它的声音，却不知道它从哪里来，往哪里去。","s":"《约翰福音》三章八节","n":"试译","l":"la","o":"Spiritus ubi vult spirat, et vocem eius audis, sed nescis unde veniat aut quo vadat.","w":1.2},{"t":"大方无隅，大器晚成，大音希声，大象无形。","s":"《老子》第四十一章"},{"t":"为学日益，为道日损。损之又损，以至于无为。无为而无不为。","s":"《老子》第四十八章"},{"t":"知者不言，言者不知。","s":"《老子》第五十六章","w":0.3},{"t":"我跳舞时便跳舞，睡觉时便睡觉；即便独自在美丽的果园里散步，如果我的思绪有一阵被别的事占去，我也会把它们领回来，领回到散步、果园、独处的甜美和我自己身上。","s":"蒙田《随笔》论经验","n":"试译","l":"fr","o":"Quand je dance, je dance ; quand je dors, je dors ; voire et quand je me promeine solitairement en un beau verger, si mes pensées se sont entretenues des occurences estrangeres quelque partie du temps, quelque autre partie je les rameine à la promenade, au verger, à la douceur de cette solitude et à moy.","w":0.6},{"t":"探讨哲学，就是学习死亡。","s":"蒙田《随笔》卷一","n":"试译","l":"fr","o":"Que philosopher, c'est apprendre à mourir."},{"t":"合抱之木，生于毫末；九层之台，起于累土；千里之行，始于足下。","s":"《老子》第六十四章"},{"t":"人之生也柔弱，其死也坚强。草木之生也柔脆，其死也枯槁。故坚强者死之徒，柔弱者生之徒。","s":"《老子》第七十六章","season":"winter"},{"t":"天下莫柔弱于水，而攻坚强者莫之能胜，以其无以易之。","s":"《老子》第七十八章"},{"t":"世界不过是一架永恒的秋千。","s":"蒙田《随笔》论悔恨","n":"试译","l":"fr","o":"Le monde n'est qu'une branloire perenne."},{"t":"我知道什么？","s":"蒙田《随笔》卷二","n":"试译","l":"fr","o":"Que sçay-je ?"},{"t":"信言不美，美言不信。善者不辩，辩者不善。知者不博，博者不知。","s":"《老子》第八十一章"},{"t":"鹪鹩巢于深林，不过一枝；偃鼠饮河，不过满腹。","s":"《庄子》逍遥游"},{"t":"至人无己，神人无功，圣人无名。","s":"《庄子》逍遥游"},{"t":"人只是一根芦苇，自然界最脆弱的东西；但他是一根会思想的芦苇。要压垮他，用不着整个宇宙动手，一缕水汽、一滴水就够了。然而即便宇宙压垮了他，人仍比杀死他的东西高贵，因为他知道自己会死，也知道宇宙对他的优势；而宇宙对此一无所知。","s":"帕斯卡《思想录》","n":"试译","l":"fr","o":"L'homme n'est qu'un roseau, le plus faible de la nature ; mais c'est un roseau pensant."},{"t":"这些无限空间的永恒沉默，使我恐惧。","s":"帕斯卡《思想录》","n":"试译","l":"fr","o":"Le silence éternel de ces espaces infinis m'effraie."},{"t":"且夫水之积也不厚，则其负大舟也无力。覆杯水于坳堂之上，则芥为之舟；置杯焉则胶，水浅而舟大也。风之积也不厚，则其负大翼也无力。","s":"《庄子》逍遥游","w":1.3},{"t":"昔者庄周梦为胡蝶，栩栩然胡蝶也，自喻适志与！不知周也。俄然觉，则蘧蘧然周也。不知周之梦为胡蝶与，胡蝶之梦为周与？周与胡蝶，则必有分矣。此之谓物化。","s":"《庄子》齐物论"},{"t":"天地与我并生，而万物与我为一。","s":"《庄子》齐物论"},{"t":"心有它的理由，是理性所不知道的。","s":"帕斯卡《思想录》","n":"试译","l":"fr","o":"Le cœur a ses raisons que la raison ne connaît point."},{"t":"人的一切不幸只来自一件事：不知道如何安静地待在一个房间里。","s":"帕斯卡《思想录》","n":"试译","l":"fr","o":"Tout le malheur des hommes vient d'une seule chose, qui est de ne savoir pas demeurer en repos dans une chambre.","w":0.3},{"t":"六合之外，圣人存而不论；六合之内，圣人论而不议。","s":"《庄子》齐物论"},{"t":"彼节者有间，而刀刃者无厚；以无厚入有间，恢恢乎其于游刃必有余地矣。","s":"《庄子》养生主"},{"t":"瞻彼阕者，虚室生白，吉祥止止。","s":"《庄子》人间世","w":0.25},{"t":"我是，我存在，这是确定的。可是能确定多久？就在我思想的时候；因为也许一旦我完全停止思想，我就同时完全不再存在了。","s":"笛卡尔《第一哲学沉思集》二","n":"试译","l":"la","o":"Ego sum, ego existo; certum est. Quandiu autem? Nempe quandiu cogito."},{"t":"良知是世上分配得最均匀的东西。","s":"笛卡尔《谈谈方法》","n":"试译","l":"fr","o":"Le bon sens est la chose du monde la mieux partagée."},{"t":"知不可奈何而安之若命，唯有德者能之。","s":"《庄子》德充符"},{"t":"古之真人，其寝不梦，其觉无忧，其食不甘，其息深深。","s":"《庄子》大宗师"},{"t":"水静犹明，而况精神！圣人之心静乎！天地之鉴也，万物之镜也。","s":"《庄子》天道","w":0.2,"season":"summer"},{"t":"如果得救的路近在手边、不费气力就能找到，怎么会几乎所有人都忽略了它？但一切高贵的事物，都同样困难，同样稀少。","s":"斯宾诺莎《伦理学》结尾","n":"试译","l":"la","o":"Sed omnia præclara tam difficilia, quam rara sunt."},{"t":"自由的人最少想到死；他的智慧不是对死的沉思，而是对生的沉思。","s":"斯宾诺莎《伦理学》第四部分","n":"试译","l":"la","o":"Homo liber de nulla re minus, quam de morte cogitat, et ejus sapientia non mortis, sed vitæ meditatio est.","season":"winter"},{"t":"以道观之，物无贵贱；以物观之，自贵而相贱。","s":"《庄子》秋水","season":"autumn"},{"t":"君子之交淡若水，小人之交甘若醴。君子淡以亲，小人甘以绝。","s":"《庄子》山木"},{"t":"天地有大美而不言，四时有明法而不议，万物有成理而不说。","s":"《庄子》知北游","w":0.4},{"t":"我们感到并且体验到：我们是永恒的。","s":"斯宾诺莎《伦理学》第五部分","n":"试译","l":"la","o":"Sentimus experimurque, nos æternos esse."},{"t":"为什么有物存在，而不是一无所有？","s":"莱布尼茨《基于理性的自然与神恩的原则》","n":"试译","l":"fr","o":"Pourquoi il y a plutôt quelque chose que rien ?"},{"t":"夫哀莫大于心死，而人死亦次之。","s":"《庄子》田子方"},{"t":"巧者劳而知者忧，无能者无所求，饱食而遨游，泛若不系之舟。","s":"《庄子》列御寇"},{"t":"郢人垩慢其鼻端若蝇翼，使匠石斫之。匠石运斤成风，听而斫之，尽垩而鼻不伤，郢人立不失容。……自夫子之死也，吾无以为质矣，吾无与言之矣。","s":"《庄子》徐无鬼","w":1.1},{"t":"存在，就是被感知。","s":"贝克莱《人类知识原理》","n":"试译","l":"la","o":"Esse est percipi."},{"t":"就我自己而言，每当我最亲密地进入我所谓的自我，总会撞见这个或那个特定的知觉：热或冷，明或暗，爱或恨，痛或乐。任何时候，我都抓不住一个没有知觉的自我。","s":"休谟《人性论》","n":"试译","l":"en","o":"For my part, when I enter most intimately into what I call myself, I always stumble on some particular perception or other, of heat or cold, light or shade, love or hatred, pain or pleasure. I never can catch myself at any time without a perception."},{"t":"学而时习之，不亦说乎？有朋自远方来，不亦乐乎？人不知而不愠，不亦君子乎？","s":"《论语》学而"},{"t":"吾十有五而志于学，三十而立，四十而不惑，五十而知天命，六十而耳顺，七十而从心所欲，不逾矩。","s":"《论语》为政"},{"t":"知之为知之，不知为不知，是知也。","s":"《论语》为政"},{"t":"理性是、并且应当只是激情的奴隶。","s":"休谟《人性论》","n":"试译","l":"en","o":"Reason is, and ought only to be the slave of the passions."},{"t":"在这样的境况里，人享受的是什么？不是任何身外之物，只是自己，只是自己的存在；只要这境况持续，人便像神一样自足。","s":"卢梭《一个孤独漫步者的遐想》第五","n":"试译","l":"fr","o":"De quoi jouit-on dans une pareille situation ? De rien d'extérieur à soi, de rien sinon de soi-même et de sa propre existence ; tant que cet état dure, on se suffit à soi-même comme Dieu.","w":0.3},{"t":"朝闻道，夕死可矣。","s":"《论语》里仁"},{"t":"知者乐水，仁者乐山。知者动，仁者静。知者乐，仁者寿。","s":"《论语》雍也"},{"t":"贤哉回也！一箪食，一瓢饮，在陋巷，人不堪其忧，回也不改其乐。贤哉回也！","s":"《论语》雍也","season":"summer"},{"t":"有两样东西，我越是经常而持久地思考它们，它们就越以常新且日益增长的惊叹与敬畏充满我的心灵：我头上的星空，和我心中的道德律。","s":"康德《实践理性批判》结语","n":"试译","l":"de","o":"Zwei Dinge erfüllen das Gemüt mit immer neuer und zunehmender Bewunderung und Ehrfurcht, je öfter und anhaltender sich das Nachdenken damit beschäftigt: der bestirnte Himmel über mir und das moralische Gesetz in mir."},{"t":"敢于求知！有勇气使用你自己的理智！","s":"康德《什么是启蒙》","n":"试译","l":"de","o":"Sapere aude! Habe Mut, dich deines eigenen Verstandes zu bedienen!"},{"t":"三人行，必有我师焉。择其善者而从之，其不善者而改之。","s":"《论语》述而"},{"t":"岁寒，然后知松柏之后凋也。","s":"《论语》子罕","w":0.6,"season":"winter"},{"t":"三军可夺帅也，匹夫不可夺志也。","s":"《论语》子罕"},{"t":"没有内容的思想是空的，没有概念的直观是盲的。","s":"康德《纯粹理性批判》","n":"试译","l":"de","o":"Gedanken ohne Inhalt sind leer, Anschauungen ohne Begriffe sind blind."},{"t":"密涅瓦的猫头鹰，要到黄昏降临才起飞。","s":"黑格尔《法哲学原理》序言","n":"试译","l":"de","o":"Die Eule der Minerva beginnt erst mit der einbrechenden Dämmerung ihren Flug.","season":"autumn"},{"t":"人能弘道，非道弘人。","s":"《论语》卫灵公"},{"t":"天何言哉？四时行焉，百物生焉，天何言哉？","s":"《论语》阳货"},{"t":"学问之道无他，求其放心而已矣。","s":"《孟子》告子上"},{"t":"真理是整体。","s":"黑格尔《精神现象学》序言","n":"试译","l":"de","o":"Das Wahre ist das Ganze."},{"t":"世界是我的表象。","s":"叔本华《作为意志和表象的世界》","n":"试译","l":"de","o":"Die Welt ist meine Vorstellung."},{"t":"穷则独善其身，达则兼善天下。","s":"《孟子》尽心上"},{"t":"「敢问何谓浩然之气？」曰：「难言也。其为气也，至大至刚，以直养而无害，则塞于天地之间。」","s":"《孟子》公孙丑上"},{"t":"大人者，不失其赤子之心者也。","s":"《孟子》离娄下"},{"t":"哲学说得完全正确：人生只能倒过来理解。但人们忘了另一句：它必须向前活。","s":"克尔凯郭尔《日记》一八四三","n":"试译","l":"da","o":"Det er ganske sandt, hvad Philosophien siger, at Livet maa forstaaes baglænds. Men derover glemmer man den anden Sætning, at det maa leves forlænds."},{"t":"焦虑是自由的眩晕。","s":"克尔凯郭尔《焦虑的概念》","n":"试译","l":"da","o":"Angest er Frihedens Svimlen."},{"t":"尽信书，则不如无书。","s":"《孟子》尽心下"},{"t":"知止而后有定，定而后能静，静而后能安，安而后能虑，虑而后能得。","s":"《大学》"},{"t":"天命之谓性，率性之谓道，修道之谓教。","s":"《中庸》"},{"t":"我变成一只透明的眼球；我什么都不是；我看见一切。","s":"爱默生《论自然》","n":"试译","l":"en","o":"I become a transparent eye-ball; I am nothing; I see all."},{"t":"相信你自己：每一颗心都随那根铁弦振动。","s":"爱默生《论自助》","n":"试译","l":"en","o":"Trust thyself: every heart vibrates to that iron string."},{"t":"君子素其位而行，不愿乎其外。","s":"《中庸》"},{"t":"天行健，君子以自强不息。地势坤，君子以厚德载物。","s":"《周易》象传"},{"t":"形而上者谓之道，形而下者谓之器。","s":"《周易》系辞"},{"t":"愚蠢的一致，是小心灵的妖怪。","s":"爱默生《论自助》","n":"试译","l":"en","o":"A foolish consistency is the hobgoblin of little minds."},{"t":"我到林中去，是因为我希望从容地生活，只面对生活的基本事实，看看我能否学到它要教我的东西，而不要到了死时才发现自己从未活过。","s":"梭罗《瓦尔登湖》","n":"试译","l":"en","o":"I went to the woods because I wished to live deliberately, to front only the essential facts of life, and see if I could not learn what it had to teach, and not, when I came to die, discover that I had not lived.","w":0.6},{"t":"穷则变，变则通，通则久。","s":"《周易》系辞"},{"t":"是故学然后知不足，教然后知困。知不足，然后能自反也；知困，然后能自强也。故曰教学相长也。","s":"《礼记》学记"},{"t":"青，取之于蓝，而青于蓝；冰，水为之，而寒于水。","s":"《荀子》劝学","season":"spring"},{"t":"时间只是我垂钓的溪流。","s":"梭罗《瓦尔登湖》","n":"试译","l":"en","o":"Time is but the stream I go a-fishing in."},{"t":"我自相矛盾吗？很好，那我就自相矛盾。我广大，我包含众多。","s":"惠特曼《自己之歌》","n":"试译","l":"en","o":"Do I contradict myself? Very well then I contradict myself, (I am large, I contain multitudes.)"},{"t":"天地无全功，圣人无全能，万物无全用。","s":"《列子》天瑞"},{"t":"菩提本无树，明镜亦非台。\n本来无一物，何处惹尘埃。","s":"《六祖坛经》行由品"},{"t":"至道无难，唯嫌拣择。但莫憎爱，洞然明白。","s":"僧璨《信心铭》","w":0.3},{"t":"人是一根绳索，系在兽与超人之间，一根悬在深渊之上的绳索。人之所以伟大，在于他是一座桥而不是一个目的；人之所以可爱，在于他是一次过渡，也是一次没落。","s":"尼采《查拉图斯特拉如是说》序言","n":"试译","l":"de","o":"Der Mensch ist ein Seil, geknüpft zwischen Thier und Übermensch, – ein Seil über einem Abgrunde."},{"t":"人必须在自己身上还有混沌，才能生出一颗跳舞的星。","s":"尼采《查拉图斯特拉如是说》序言","n":"试译","l":"de","o":"Man muss noch Chaos in sich haben, um einen tanzenden Stern gebären zu können."},{"t":"云门垂语云：「十五日以前不问汝，十五日以后道将一句来。」自代云：「日日是好日。」","s":"《碧岩录》第六则","w":0.5},{"t":"师问二新到：「上座曾到此间否？」云：「不曾到。」师云：「吃茶去。」又问那一人：「曾到此间否？」云：「曾到。」师云：「吃茶去。」院主问：「和尚，不曾到教伊吃茶去即且置，曾到为什么教伊吃茶去？」师云：「院主。」院主应诺。师云：「吃茶去。」","s":"《五灯会元》赵州从谂","w":0.4},{"t":"一切有为法，如梦幻泡影，如露亦如电，应作如是观。","s":"《金刚经》"},{"t":"我要越来越多地学会把事物中必然的东西看作美的——这样我就会成为使事物变美的人之一。爱命运：从今往后，这就是我的爱。","s":"尼采《快乐的科学》二七六","n":"试译","l":"de","o":"Ich will immer mehr lernen, das Nothwendige an den Dingen als das Schöne sehen: – so werde ich Einer von Denen sein, welche die Dinge schön machen. Amor fati: das sei von nun an meine Liebe!"},{"t":"杀不死我的，使我更强。","s":"尼采《偶像的黄昏》","n":"试译","l":"de","o":"Was mich nicht umbringt, macht mich stärker.","season":"winter"},{"t":"色不异空，空不异色；色即是空，空即是色。","s":"《心经》"},{"t":"闲来无事不从容，睡觉东窗日已红。\n万物静观皆自得，四时佳兴与人同。","s":"程颢《秋日偶成》","w":0.35,"season":"autumn"},{"t":"为天地立心，为生民立命，为往圣继绝学，为万世开太平。","s":"张载"},{"t":"智慧的艺术，是知道该忽略什么的艺术。","s":"威廉·詹姆斯《心理学原理》","n":"试译","l":"en","o":"The art of being wise is the art of knowing what to overlook."},{"t":"日月是百代的过客，来来去去的年岁也是旅人。","s":"松尾芭蕉《奥之细道》","n":"试译","l":"ja","o":"月日は百代の過客にして、行きかふ年もまた旅人なり。","season":"spring"},{"t":"半亩方塘一鉴开，天光云影共徘徊。\n问渠那得清如许？为有源头活水来。","s":"朱熹《观书有感》"},{"t":"宇宙便是吾心，吾心即是宇宙。","s":"陆九渊"},{"t":"无善无恶心之体，有善有恶意之动，知善知恶是良知，为善去恶是格物。","s":"王阳明 四句教"},{"t":"古池。青蛙跃入，水声。","s":"松尾芭蕉 俳句","n":"试译","l":"ja","o":"古池や蛙飛びこむ水の音","w":0.2,"season":"spring"},{"t":"雾凇沆砀，天与云与山与水，上下一白。湖上影子，惟长堤一痕、湖心亭一点、与余舟一芥、舟中人两三粒而已。","s":"张岱《湖心亭看雪》","w":0.3,"season":"winter"},{"t":"少年读书，如隙中窥月；中年读书，如庭中望月；老年读书，如台上玩月。皆以阅历之浅深，为所得之浅深耳。","s":"张潮《幽梦影》"},{"t":"有工夫读书，谓之福；有力量济人，谓之福；有学问著述，谓之福；无是非到耳，谓之福；有多闻直谅之友，谓之福。","s":"张潮《幽梦影》"},{"t":"宠辱不惊，闲看庭前花开花落；去留无意，漫随天外云卷云舒。","s":"洪应明《菜根谭》","w":0.4},{"t":"布衣菜饭，可乐终身，不必作远游计也。","s":"沈复《浮生六记》","w":0.4},{"t":"人固有一死，或重于泰山，或轻于鸿毛，用之所趋异也。","s":"司马迁《报任安书》"},{"t":"天下熙熙，皆为利来；天下攘攘，皆为利往。","s":"《史记》货殖列传"},{"t":"目送归鸿，手挥五弦。俯仰自得，游心太玄。","s":"嵇康《赠秀才入军》","season":"autumn"},{"t":"登山则情满于山，观海则意溢于海。","s":"刘勰《文心雕龙》神思"},{"t":"细草微风岸，危樯独夜舟。\n星垂平野阔，月涌大江流。\n名岂文章著，官应老病休。\n飘飘何所似，天地一沙鸥。","s":"杜甫《旅夜书怀》","w":0.9,"season":"spring"},{"t":"千山鸟飞绝，万径人踪灭。\n孤舟蓑笠翁，独钓寒江雪。","s":"柳宗元《江雪》","w":0.35,"season":"winter"},{"t":"世之奇伟、瑰怪、非常之观，常在于险远，而人之所罕至焉，故非有志者不能至也。","s":"王安石《游褒禅山记》"},{"t":"沉舟侧畔千帆过，病树前头万木春。","s":"刘禹锡《酬乐天扬州初逢席上见赠》","w":1.0,"season":"spring"},{"t":"前不见古人，后不见来者。\n念天地之悠悠，独怆然而涕下。","s":"陈子昂《登幽州台歌》"},{"t":"予独爱莲之出淤泥而不染，濯清涟而不妖，中通外直，不蔓不枝，香远益清，亭亭净植，可远观而不可亵玩焉。","s":"周敦颐《爱莲说》","season":"summer"}]</script>
+<script>
+(function () {
+  "use strict";
+
+  /* ========== 文本 ========== */
+  // 文本在 data/passages.json，由 build.py 注入到上面的 <script id="passages"> 里。
+  const P = JSON.parse(document.getElementById("passages").textContent);
+
+  const $ = id => document.getElementById(id);
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const rnd = (a, b) => a + Math.random() * (b - a);
+
+  /* ========== 时辰与季节 ========== */
+  const h = new Date().getHours(), mo = new Date().getMonth() + 1;
+  document.documentElement.dataset.tod = h < 5 ? "night" : h < 8 ? "dawn" : h < 17 ? "day" : h < 20 ? "dusk" : "night";
+  // 风有季节：秋风长而急，冬风稀而利，春风带一点向上的浮力，夏天几乎不动。
+  const SEASONS = {
+    spring: { count: .9,  speed: .50, trail: 12, lift: -.06, alpha: 1.00, width: 1.0 },
+    summer: { count: .55, speed: .28, trail:  9, lift:  .00, alpha:  .85, width: 1.0 },
+    autumn: { count: 1.1, speed: .70, trail: 18, lift: -.02, alpha: 1.05, width: 1.0 },
+    winter: { count: .6,  speed: .85, trail: 10, lift:  .03, alpha:  .90, width: .75 }
+  };
+  const seasonName = mo >= 3 && mo <= 5 ? "spring" : mo >= 6 && mo <= 8 ? "summer" : mo >= 9 && mo <= 11 ? "autumn" : "winter";
+  const SEA = SEASONS[seasonName];
+  document.documentElement.dataset.season = seasonName;
+  const isMobile = matchMedia("(max-width: 720px)").matches;
+  const lowEnd = isMobile || (navigator.deviceMemory && navigator.deviceMemory <= 4) || (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4);
+
+  /* ========== 日期 ========== */
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const EPOCH = Date.UTC(2026, 0, 1);
+  const D = "〇一二三四五六七八九";
+  const num = n => n <= 10 ? "一二三四五六七八九十"[n - 1] : n < 20 ? "十" + D[n - 10] : D[Math.floor(n / 10)] + "十" + (n % 10 ? D[n % 10] : "");
+  const cn = d => [...String(d.getFullYear())].map(c => D[+c]).join("") + "年" + num(d.getMonth() + 1) + "月" + num(d.getDate()) + "日";
+  const fmt = d => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  const parse = q => {
+    if (!q || !/^\d{4}-\d{2}-\d{2}$/.test(q)) return today;
+    const [y, m, d] = q.split("-").map(Number);
+    const c = new Date(y, m - 1, d);
+    return (!isNaN(c) && c < today) ? c : today;          // 只能回头，不能预支
+  };
+  const seasonOf = d => { const m = d.getMonth() + 1; return m >= 3 && m <= 5 ? "spring" : m >= 6 && m <= 8 ? "summer" : m >= 9 && m <= 11 ? "autumn" : "winter"; };
+  const pools = {};
+  const poolFor = sn => pools[sn] || (pools[sn] = P.filter(p => !p.season || p.season === sn));
+  const pick = d => {
+    const pool = poolFor(seasonOf(d));
+    const days = Math.floor((Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) - EPOCH) / 864e5);
+    return pool[((days % pool.length) + pool.length) % pool.length];
+  };
+
+  /* ========== 风场 ========== */
+  const canvas = $("wind"), ctx = canvas.getContext("2d");
+  let W = 0, H = 0, dpr = 1, particles = [], gust = 0, t = 0;
+  let windK = 1, windTarget = 1;              // 段落自己的风量，逐帧靠近，换段时不会跳
+  const pointer = { x: -1e4, y: -1e4, vx: 0, vy: 0, down: false };
+
+  // 值噪声（两个八度），够画风了
+  const perm = new Uint8Array(512);
+  for (let i = 0; i < 256; i++) perm[i] = i;
+  for (let i = 255; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; const k = perm[i]; perm[i] = perm[j]; perm[j] = k; }
+  for (let i = 0; i < 256; i++) perm[i + 256] = perm[i];
+  const fade = x => x * x * (3 - 2 * x);
+  function noise(x, y) {
+    const X = Math.floor(x) & 255, Y = Math.floor(y) & 255;
+    const fx = x - Math.floor(x), fy = y - Math.floor(y);
+    const a = perm[perm[X] + Y] / 255, b = perm[perm[X + 1] + Y] / 255,
+          c = perm[perm[X] + Y + 1] / 255, d = perm[perm[X + 1] + Y + 1] / 255;
+    const u = fade(fx), v = fade(fy);
+    const top = a + (b - a) * u, bot = c + (d - c) * u;
+    return top + (bot - top) * v;   // 0..1
+  }
+  const field = (x, y, tt) =>
+    (noise(x * .0022 + tt * .05, y * .0022) * .7 + noise(x * .006 - tt * .03, y * .006 + tt * .02) * .3) * Math.PI * 2;
+
+  function spawn() {
+    return { x: rnd(0, W), y: rnd(0, H), vx: 0, vy: 0, life: rnd(80, 320), age: 0, w: rnd(.5, 1.3), trail: [] };
+  }
+  function resize() {
+    dpr = Math.min(devicePixelRatio || 1, 2);
+    W = innerWidth; H = innerHeight;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const n = Math.round(Math.min(1200, Math.max(160, W * H / (lowEnd ? 3000 : 1700) * SEA.count)));
+    particles = Array.from({ length: n }, spawn);
+  }
+  function windColor() {
+    const cs = getComputedStyle(document.documentElement);
+    return { rgb: cs.getPropertyValue("--wind").trim(), a: (parseFloat(cs.getPropertyValue("--wind-alpha")) || .2) * SEA.alpha };
+  }
+  let color = null, colorTick = 0;
+
+  function step() {
+    t += 1 / 60;
+    if (!color || ++colorTick > 90) { color = windColor(); colorTick = 0; }
+    gust *= .96;
+    windK += (windTarget - windK) * .02;
+    pointer.vx *= .9; pointer.vy *= .9;
+
+    ctx.clearRect(0, 0, W, H);
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "rgba(" + color.rgb + "," + (color.a * (.45 + .55 * Math.min(windK, 1))) + ")";
+
+    const base = -(SEA.speed * windK + gust * 2.2);     // 风从右往左
+    const trailLen = Math.max(4, Math.round(SEA.trail * Math.min(windK, 1.4))) * 2;
+    for (const p of particles) {
+      const a = field(p.x, p.y, t);
+      const ax = Math.cos(a) * .35 * windK + base, ay = Math.sin(a) * .35 * windK + SEA.lift - gust * .08;
+      // 指针：靠近的被推开，指针的速度带起一阵
+      const dx = p.x - pointer.x, dy = p.y - pointer.y, d2 = dx * dx + dy * dy, R = pointer.down ? 260 : 150;
+      if (d2 < R * R) {
+        const d = Math.sqrt(d2) + .01, f = 1 - d / R, k = pointer.down ? 1.4 : .5;
+        p.vx += (dx / d) * f * k + pointer.vx * f * .18;
+        p.vy += (dy / d) * f * k + pointer.vy * f * .18;
+      }
+      p.vx = (p.vx + ax) * .92; p.vy = (p.vy + ay) * .92;
+      p.x += p.vx; p.y += p.vy; p.age++;
+      p.trail.push(p.x, p.y);
+      while (p.trail.length > trailLen) p.trail.splice(0, 2);
+      if (p.age > p.life || p.x < -20 || p.x > W + 20 || p.y < -20 || p.y > H + 20) {
+        const q = spawn(); if (Math.random() < .7) { q.x = W + 10; q.y = rnd(0, H); }
+        Object.assign(p, q); continue;
+      }
+      const k = Math.min(1, p.age / 30) * Math.min(1, (p.life - p.age) / 30);   // 生灭都是渐的
+      if (p.trail.length < 4) continue;
+      ctx.globalAlpha = k;
+      ctx.lineWidth = p.w * SEA.width;
+      ctx.beginPath();
+      ctx.moveTo(p.trail[0], p.trail[1]);
+      for (let i = 2; i < p.trail.length; i += 2) ctx.lineTo(p.trail[i], p.trail[i + 1]);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    requestAnimationFrame(step);
+  }
+
+  /* ========== 文字：吹进来，吹出去 ========== */
+  const textEl = $("text"), srcEl = $("source"), origEl = $("orig");
+  let glyphs = [];
+
+  function layout(p) {
+    textEl.replaceChildren(); srcEl.replaceChildren();
+    glyphs = [];
+    for (const ch of p.t) {
+      if (ch === "\n") { textEl.appendChild(document.createElement("br")); continue; }
+      const s = document.createElement("span");
+      s.className = "ch"; s.textContent = ch;
+      textEl.appendChild(s); glyphs.push(s);
+    }
+    windTarget = (p.w == null) ? 1 : p.w;
+    const drop = glyphs.length < 12 ? "8%" : glyphs.length < 40 ? "26%" : "42%";
+    srcEl.style.setProperty("--drop", drop);
+    origEl.textContent = p.o || "";
+    if (p.l) origEl.setAttribute("lang", p.l); else origEl.removeAttribute("lang");
+    srcEl.textContent = p.s;
+    if (p.n) { const n = document.createElement("span"); n.className = "note"; n.textContent = p.n; srcEl.appendChild(n); }
+  }
+
+  function blowIn() {
+    const n = glyphs.length, step = Math.min(.03, 2.4 / Math.max(1, n));
+    glyphs.forEach((g, i) => {
+      // 每个字从右上方、沿风来的方向落位；远近不一，像被同一阵风带到
+      const dist = rnd(140, 420), lift = rnd(-70, 30);
+      g.style.setProperty("--d", (i * step + rnd(0, .25)).toFixed(3) + "s");
+      g.style.setProperty("--dur", rnd(1.4, 2.3).toFixed(2) + "s");
+      g.style.transform = "translate(" + dist + "px," + lift + "px) rotate(" + rnd(-14, 14) + "deg)";
+      g.style.filter = "blur(" + (isMobile ? 3 : 6) + "px)";
+      g.classList.remove("in");
+    });
+    const sd = (n * step + 1.2).toFixed(2) + "s";
+    srcEl.style.setProperty("--sd", sd); origEl.style.setProperty("--sd", sd);
+    srcEl.classList.remove("in"); origEl.classList.remove("in");
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      glyphs.forEach(g => { g.style.transform = ""; g.style.filter = ""; g.classList.add("in"); });
+      srcEl.classList.add("in"); origEl.classList.add("in");
+    }));
+    gust = Math.max(gust, .8);
+  }
+
+  function blowOut() {
+    return new Promise(res => {
+      const n = glyphs.length, step = Math.min(.012, 1 / Math.max(1, n));
+      glyphs.forEach((g, i) => {
+        g.style.setProperty("--d", (i * step * (Math.random() < .5 ? 1 : .6)).toFixed(3) + "s");
+        g.style.setProperty("--dur", rnd(.8, 1.3).toFixed(2) + "s");
+        g.classList.remove("in");
+        g.style.transform = "translate(" + (-rnd(260, 560)) + "px," + rnd(-40, 90) + "px) rotate(" + rnd(-25, 25) + "deg)";
+        g.style.filter = "blur(" + (isMobile ? 4 : 8) + "px)";
+      });
+      srcEl.style.setProperty("--sd", "0s"); srcEl.classList.remove("in");
+      origEl.style.setProperty("--sd", "0s"); origEl.classList.remove("in");
+      gust = Math.max(gust, 1.6);
+      setTimeout(res, 1500);
+    });
+  }
+
+  /* ========== 换日 ========== */
+  let day = parse(new URLSearchParams(location.search).get("d"));
+  const dateEl = $("date"), yEl = $("yesterday"), tEl = $("today");
+  let busy = false;
+
+  function setDay(d, push) {
+    day = d;
+    dateEl.textContent = cn(d); dateEl.dateTime = fmt(d);
+    const y = new Date(d); y.setDate(y.getDate() - 1);
+    yEl.href = "?d=" + fmt(y);
+    tEl.hidden = !(d < today);
+    if (push) history.pushState(null, "", d < today ? "?d=" + fmt(d) : location.pathname);
+  }
+  async function go(d, push) {
+    if (busy) return; busy = true;
+    if (!reduced) await blowOut();
+    setDay(d, push);
+    layout(pick(d));
+    if (reduced) { glyphs.forEach(g => g.classList.add("in")); srcEl.classList.add("in"); origEl.classList.add("in"); }
+    else blowIn();
+    busy = false;
+  }
+  yEl.addEventListener("click", e => { e.preventDefault(); const y = new Date(day); y.setDate(y.getDate() - 1); go(y, true); });
+  tEl.addEventListener("click", e => { e.preventDefault(); go(today, true); });
+  $("mark").addEventListener("click", e => { e.preventDefault(); if (day < today) go(today, true); else gust = Math.max(gust, 1.2); });
+  addEventListener("popstate", () => go(parse(new URLSearchParams(location.search).get("d")), false));
+
+  /* ========== 指针 ========== */
+  let lx = 0, ly = 0, lt = 0;
+  function move(x, y) {
+    const n = performance.now(), dt = Math.max(8, n - lt);
+    pointer.vx = (x - lx) / dt * 16; pointer.vy = (y - ly) / dt * 16;
+    pointer.x = x; pointer.y = y; lx = x; ly = y; lt = n;
+  }
+  addEventListener("pointermove", e => move(e.clientX, e.clientY), { passive: true });
+  addEventListener("pointerleave", () => { pointer.x = pointer.y = -1e4; });
+  addEventListener("pointerdown", e => {
+    if (e.target.closest("a")) return;
+    pointer.down = true; move(e.clientX, e.clientY);
+    gust = Math.max(gust, .6);
+    // 按住的时候，字被吹得散一点；松开就回去
+    glyphs.forEach(g => {
+      if (!g.classList.contains("in")) return;
+      g.style.transition = "transform 1.2s cubic-bezier(.2,.7,.2,1)";
+      g.style.transform = "translate(" + rnd(-16, 4) + "px," + rnd(-8, 8) + "px) rotate(" + rnd(-3, 3) + "deg)";
+    });
+  });
+  const release = () => {
+    pointer.down = false;
+    glyphs.forEach(g => { if (g.classList.contains("in")) { g.style.transform = ""; g.style.transition = ""; } });
+  };
+  addEventListener("pointerup", release); addEventListener("pointercancel", release);
+
+  /* ========== 风声（可选，默认关） ========== */
+  let audio = null;
+  function toggleSound(btn) {
+    if (!audio) {
+      const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+      const ac = new AC();
+      const len = ac.sampleRate * 4, buf = ac.createBuffer(1, len, ac.sampleRate), data = buf.getChannelData(0);
+      let b0 = 0, b1 = 0, b2 = 0;
+      for (let i = 0; i < len; i++) {          // 粉噪声
+        const w = Math.random() * 2 - 1;
+        b0 = .997 * b0 + .029 * w; b1 = .985 * b1 + .032 * w; b2 = .95 * b2 + .048 * w;
+        data[i] = (b0 + b1 + b2 + w * .05) * .25;
+      }
+      const src = ac.createBufferSource(); src.buffer = buf; src.loop = true;
+      const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 420; bp.Q.value = .9;
+      const lfo = ac.createOscillator(); lfo.type = "sine"; lfo.frequency.value = .11;
+      const lfoG = ac.createGain(); lfoG.gain.value = 260;
+      lfo.connect(lfoG).connect(bp.frequency);
+      const gain = ac.createGain(); gain.gain.value = 0;
+      src.connect(bp).connect(gain).connect(ac.destination);
+      src.start(); lfo.start();
+      audio = { ac, gain, on: false };
+      // 风大的时候声音也大
+      (function follow() { if (audio.on) audio.gain.gain.setTargetAtTime(.05 + gust * .06, ac.currentTime, .2); requestAnimationFrame(follow); })();
+    }
+    audio.on = !audio.on;
+    if (audio.ac.state === "suspended") audio.ac.resume();
+    audio.gain.gain.setTargetAtTime(audio.on ? .05 : 0, audio.ac.currentTime, .8);
+    btn.setAttribute("aria-pressed", String(audio.on));
+  }
+  $("sound").addEventListener("click", e => { e.preventDefault(); toggleSound(e.currentTarget); });
+
+  /* ========== 起 ========== */
+  addEventListener("resize", resize);
+  resize();
+  if (!reduced) requestAnimationFrame(step);
+  setDay(day, false);
+  layout(pick(day));
+  if (reduced) { glyphs.forEach(g => g.classList.add("in")); srcEl.classList.add("in"); origEl.classList.add("in"); }
+  else setTimeout(blowIn, 250);
+})();
+</script>
+</body>
+</html>

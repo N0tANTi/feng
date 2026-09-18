@@ -1,0 +1,4 @@
+fonts/*.ttf
+fonts/*.otf
+dist/_subset.txt
+__pycache__/
